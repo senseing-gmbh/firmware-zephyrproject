@@ -323,3 +323,14 @@ test_spi_bme680: bme680@3c {
 	reg = <0x3c>;
 	spi-max-frequency = <0>;
 };
+
+test_spi_iis3dwb: iis3dwb@3c {
+	compatible = "st,iis3dwb";
+	label = "IIS3DWB";
+	reg = <0x3c>;
+	spi-max-frequency = <0>;
+	drdy-gpios = <&test_gpio 0 0>;
+	drdy-int = <1>;
+	range = <1>;
+	odr = <5>;
+};
