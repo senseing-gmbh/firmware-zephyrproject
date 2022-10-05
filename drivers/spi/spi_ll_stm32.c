@@ -12,6 +12,8 @@ LOG_MODULE_REGISTER(spi_ll_stm32);
 
 #include <zephyr/sys/util.h>
 #include <zephyr/kernel.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 #include <soc.h>
 #include <stm32_ll_spi.h>
 #include <errno.h>
@@ -47,6 +49,8 @@ LOG_MODULE_REGISTER(spi_ll_stm32);
 #define SPI_STM32_ERR_MSK (LL_SPI_SR_CRCERR | LL_SPI_SR_MODF | LL_SPI_SR_OVR)
 #endif
 #endif /* CONFIG_SOC_SERIES_STM32MP1X */
+
+bool wasReinitialized = false;
 
 #ifdef CONFIG_SPI_STM32_DMA
 /* dummy value used for transferring NOP when tx buf is null
@@ -461,10 +465,11 @@ static int spi_stm32_configure(const struct device *dev,
 	uint32_t clock;
 	int br;
 
-	if (spi_context_configured(&data->ctx, config)) {
+	if (!wasReinitialized && spi_context_configured(&data->ctx, config)) {
 		/* Nothing to do */
 		return 0;
 	}
+	wasReinitialized = false;
 
 	if ((SPI_WORD_SIZE_GET(config->operation) != 8)
 	    && (SPI_WORD_SIZE_GET(config->operation) != 16)) {
@@ -610,6 +615,11 @@ static int transceive(const struct device *dev,
 	SPI_TypeDef *spi = cfg->spi;
 	int ret;
 
+	ret = pm_device_runtime_get(dev);
+	if (ret < 0) {
+		return ret;
+	}
+
 	if (!tx_bufs && !rx_bufs) {
 		return 0;
 	}
@@ -670,6 +680,11 @@ static int transceive(const struct device *dev,
 end:
 	spi_context_release(&data->ctx, ret);
 
+	int pm_ret = pm_device_runtime_put(dev);
+	if (ret == 0 && pm_ret != 0) {
+		return pm_ret;
+	}
+
 	return ret;
 }
 
@@ -717,6 +732,11 @@ static int transceive_dma(const struct device *dev,
 
 	if (asynchronous) {
 		return -ENOTSUP;
+	}
+
+	ret = pm_device_runtime_get(dev);
+	if (ret < 0) {
+		return ret;
 	}
 
 	spi_context_lock(&data->ctx, asynchronous, cb, userdata, config);
@@ -815,6 +835,11 @@ static int transceive_dma(const struct device *dev,
 
 end:
 	spi_context_release(&data->ctx, ret);
+
+	int pm_ret = pm_device_runtime_put(dev);
+	if (ret == 0 && pm_ret != 0) {
+		return pm_ret;
+	}
 
 	return ret;
 }
@@ -932,10 +957,40 @@ static int spi_stm32_init(const struct device *dev)
 		return err;
 	}
 
+	/* enable device runtime power management */
+	err = pm_device_runtime_enable(dev);
+	if ((err < 0) && (err != -ENOSYS)) {
+		return err;
+	}
+
 	spi_context_unlock_unconditionally(&data->ctx);
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_DEVICE
+static int spi_stm32_pm_action(const struct device *dev,
+			      enum pm_device_action action)
+{
+	int ret = 0;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		LOG_INF("Reinitalizing SPI");
+		spi_stm32_init(dev);
+		wasReinitialized = true;
+		break;
+
+	case PM_DEVICE_ACTION_SUSPEND:
+		break;
+
+	default:
+		ret = -ENOTSUP;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_PM_DEVICE */
 
 #ifdef CONFIG_SPI_STM32_INTERRUPT
 #define STM32_SPI_IRQ_HANDLER_DECL(id)					\
@@ -1033,7 +1088,8 @@ static struct spi_stm32_data spi_stm32_dev_data_##id = {		\
 	SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(id), ctx)		\
 };									\
 									\
-DEVICE_DT_INST_DEFINE(id, &spi_stm32_init, NULL,			\
+PM_DEVICE_DT_INST_DEFINE(id, spi_stm32_pm_action);		       \
+DEVICE_DT_INST_DEFINE(id, &spi_stm32_init, PM_DEVICE_DT_INST_GET(id),\
 		    &spi_stm32_dev_data_##id, &spi_stm32_cfg_##id,	\
 		    POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,		\
 		    &api_funcs);					\
