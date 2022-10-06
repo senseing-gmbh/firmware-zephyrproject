@@ -9,6 +9,8 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/kernel.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 #include <soc.h>
 #include <stm32_ll_i2c.h>
 #include <stm32_ll_rcc.h>
@@ -121,6 +123,11 @@ static int i2c_stm32_transfer(const struct device *dev, struct i2c_msg *msg,
 	struct i2c_msg *current, *next;
 	int ret = 0;
 
+	ret = pm_device_runtime_get(dev);
+	if (ret < 0) {
+		return ret;
+	}
+
 	/* Check for validity of all messages, to prevent having to abort
 	 * in the middle of a transfer
 	 */
@@ -186,6 +193,12 @@ static int i2c_stm32_transfer(const struct device *dev, struct i2c_msg *msg,
 	}
 
 	k_sem_give(&data->bus_mutex);
+
+	int pm_ret = pm_device_runtime_put(dev);
+	if (ret == 0 && pm_ret != 0) {
+		return pm_ret;
+	}
+
 	return ret;
 }
 
@@ -284,8 +297,37 @@ static int i2c_stm32_init(const struct device *dev)
 		return ret;
 	}
 
+	/* enable device runtime power management */
+	ret = pm_device_runtime_enable(dev);
+	if ((ret < 0) && (ret != -ENOSYS)) {
+		return ret;
+	}
+
 	return 0;
 }
+
+#ifdef CONFIG_PM_DEVICE
+static int i2c_stm32_pm_action(const struct device *dev,
+			       enum pm_device_action action)
+{
+	int ret = 0;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		LOG_INF("Reinitalizing I2C");
+		i2c_stm32_init(dev);
+		break;
+
+	case PM_DEVICE_ACTION_SUSPEND:
+		break;
+
+	default:
+		ret = -ENOTSUP;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_PM_DEVICE */
 
 /* Macros for I2C instance declaration */
 
@@ -369,8 +411,10 @@ static const struct i2c_stm32_config i2c_stm32_cfg_##name = {		\
 									\
 static struct i2c_stm32_data i2c_stm32_dev_data_##name;			\
 									\
+PM_DEVICE_DT_INST_DEFINE(id, i2c_stm32_pm_action);			\
 I2C_DEVICE_DT_DEFINE(DT_NODELABEL(name), i2c_stm32_init,		\
-		    NULL, &i2c_stm32_dev_data_##name,			\
+		    PM_DEVICE_DT_INST_GET(id),				\
+		    &i2c_stm32_dev_data_##name,				\
 		    &i2c_stm32_cfg_##name,				\
 		    POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,		\
 		    &api_funcs);					\
