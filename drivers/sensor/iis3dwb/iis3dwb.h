@@ -11,14 +11,14 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_IIS3DWB_IIS3DWB_H_
 #define ZEPHYR_DRIVERS_SENSOR_IIS3DWB_IIS3DWB_H_
 
-#include <drivers/gpio.h>
-#include <sys/util.h>
-#include <drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/drivers/sensor.h>
 #include <stmemsc.h>
 #include "iis3dwb_reg.h"
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-#include <drivers/spi.h>
+#include <zephyr/drivers/spi.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
 
 /* Acc Gain value in ug/LSB in High Perf mode */

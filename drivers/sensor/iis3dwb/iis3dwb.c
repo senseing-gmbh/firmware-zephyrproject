@@ -10,11 +10,11 @@
 
 #define DT_DRV_COMPAT st_iis3dwb
 
-#include <init.h>
-#include <sys/__assert.h>
-#include <sys/byteorder.h>
-#include <logging/log.h>
-#include <drivers/sensor.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/drivers/sensor.h>
 
 #include "iis3dwb.h"
 
@@ -315,10 +315,10 @@ static int iis3dwb_init(const struct device *dev)
 			filter = 0x00;
 		}
 	}
-	if (iis3dwb_xl_hp_path_on_out_set(ctx, filter) < 0) {
-		LOG_ERR("filter init error %d", cfg->range);
-		return -EIO;
-	}
+	// if (iis3dwb_xl_hp_path_on_out_set(ctx, filter) < 0) {
+	// 	LOG_ERR("filter init error %d", cfg->range);
+	// 	return -EIO;
+	// }
 
 	LOG_INF("range is %d", cfg->range);
 	if (iis3dwb_set_range_raw(dev, cfg->range) < 0) {
